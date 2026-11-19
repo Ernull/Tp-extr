@@ -1,0 +1,1338 @@
+name: Build HyperLink Tapsi Extractor APK (v2.0 Quota)
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configure Android SDK Licenses
+        shell: bash
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n8933bad161af4178b1185d1a37fbf41ea5269c55" > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n504667f4c0de7af1a06de9f4b1727b84351f2910" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Generate Android Studio Project Files
+        shell: bash
+        run: |
+          mkdir -p app/src/main/java/ir/hyperlink/extractor
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/values
+
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "HyperLinkExtractor"
+          include ':app'
+          EOF
+
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.3.2' apply false
+          }
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=false
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'ir.hyperlink.extractor'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "ir.hyperlink.extractor"
+                  minSdk 23
+                  targetSdk 34
+                  versionCode 20
+                  versionName "2.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug
+                  }
+                  debug {
+                      applicationIdSuffix ""
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/res/drawable/ic_launcher.xml
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#0F172A"
+                  android:pathData="M0,0h108v108h-108z"/>
+              <path
+                  android:fillColor="#38BDF8"
+                  android:pathData="M60,22L32,60h20l-6,26l30,-38H56z"/>
+          </vector>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">HyperLink Pro</string>
+          </resources>
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@drawable/ic_launcher"
+                  android:label="@string/app_name"
+                  android:supportsRtl="true"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:configChanges="orientation|screenSize|keyboardHidden"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/ir/hyperlink/extractor/MainActivity.java
+          package ir.hyperlink.extractor;
+
+          import android.Manifest;
+          import android.annotation.SuppressLint;
+          import android.app.Activity;
+          import android.app.AlertDialog;
+          import android.content.ClipData;
+          import android.content.ClipboardManager;
+          import android.content.Context;
+          import android.content.SharedPreferences;
+          import android.content.pm.PackageManager;
+          import android.graphics.Bitmap;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.os.Message;
+          import android.text.InputType;
+          import android.text.TextUtils;
+          import android.util.TypedValue;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.view.Window;
+          import android.webkit.CookieManager;
+          import android.webkit.GeolocationPermissions;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
+          import android.webkit.WebSettings;
+          import android.webkit.WebStorage;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.Button;
+          import android.widget.EditText;
+          import android.widget.FrameLayout;
+          import android.widget.LinearLayout;
+          import android.widget.ProgressBar;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          import org.json.JSONTokener;
+
+          import java.io.BufferedReader;
+          import java.io.InputStream;
+          import java.io.InputStreamReader;
+          import java.io.OutputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.nio.charset.StandardCharsets;
+          import java.text.SimpleDateFormat;
+          import java.util.ArrayList;
+          import java.util.Collections;
+          import java.util.Date;
+          import java.util.LinkedHashMap;
+          import java.util.LinkedHashSet;
+          import java.util.List;
+          import java.util.Locale;
+          import java.util.Map;
+          import java.util.Set;
+          import java.util.regex.Matcher;
+          import java.util.regex.Pattern;
+
+          public class MainActivity extends Activity {
+
+              private static final String TAPSI_START_URL = "https://app.tapsi.cab";
+              private static final String API_BASE = "https://testtok-production12.up.railway.app";
+              private static final String API_URL = API_BASE + "/api/tapsi/create-license";
+              private static final String PARTNER_STATUS_URL = API_BASE + "/api/tapsi/partner-status/";
+
+              private static final String PREFS_NAME = "hyperlink_tapsi_prefs";
+              private static final String KEY_PARTNER_CODE = "partner_code";
+              private static final String KEY_AUTO_COPY = "auto_copy";
+              private static final String KEY_FAST_MODE = "fast_mode";
+              private static final String KEY_HISTORY = "license_history";
+
+              // پالت رنگی مدرن و یکدست
+              private static final String COLOR_BG_BAR = "#0B1120";
+              private static final String COLOR_BG_SUB = "#111827";
+              private static final String COLOR_BG_CARD = "#1E293B";
+              private static final String COLOR_BORDER = "#334155";
+              private static final String COLOR_ACCENT = "#38BDF8";
+              private static final String COLOR_SUCCESS = "#10B981";
+              private static final String COLOR_WARNING = "#F59E0B";
+              private static final String COLOR_ERROR = "#F87171";
+              private static final String COLOR_TEXT_MAIN = "#F8FAFC";
+              private static final String COLOR_TEXT_MUTED = "#94A3B8";
+
+              private SharedPreferences prefs;
+              private WebView webView;
+              private ProgressBar progressBar;
+
+              private TextView statusBadge;
+              private TextView quotaBadge;
+              private Button partnerBtn;
+              private Button autoCopyBtn;
+              private Button fastModeBtn;
+
+              private LinearLayout resultCard;
+              private TextView resultTitleView;
+              private TextView resultSubView;
+              private TextView licenseValueView;
+              private Button copyLicenseBtn;
+              private Button extractBtn;
+              private Button cleanBtn;
+
+              private String partnerCode = "";
+              private boolean autoCopyEnabled = true;
+              private boolean fastModeEnabled = false;
+              private String lastLicenseKey = null;
+
+              // ذخیره تمام زیرشاخه‌ها و آدرس‌های درخواست‌شده برای شکار ۱۰۰٪ کوکی‌ها مشابه کروم
+              private final Set<String> observedCabUrls = Collections.synchronizedSet(new LinkedHashSet<>());
+              private final Set<String> observedIrUrls = Collections.synchronizedSet(new LinkedHashSet<>());
+
+              private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+              @SuppressLint("SetJavaScriptEnabled")
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                      getWindow().setStatusBarColor(Color.parseColor(COLOR_BG_BAR));
+                      getWindow().setNavigationBarColor(Color.parseColor(COLOR_BG_BAR));
+                  }
+
+                  prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                  partnerCode = prefs.getString(KEY_PARTNER_CODE, "").trim().toUpperCase();
+                  autoCopyEnabled = prefs.getBoolean(KEY_AUTO_COPY, true);
+                  fastModeEnabled = prefs.getBoolean(KEY_FAST_MODE, false);
+
+                  seedDefaultDomains();
+                  requestLocationPermissionsIfNeeded();
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setBackgroundColor(Color.parseColor(COLOR_BG_BAR));
+                  root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+
+                  // ==========================================
+                  // 1. هدر بالا: برند + وضعیت + دکمه‌های سریع
+                  // ==========================================
+                  LinearLayout topBar = new LinearLayout(this);
+                  topBar.setOrientation(LinearLayout.HORIZONTAL);
+                  topBar.setGravity(Gravity.CENTER_VERTICAL);
+                  topBar.setBackgroundColor(Color.parseColor(COLOR_BG_BAR));
+                  topBar.setPadding(dp(10), dp(8), dp(10), dp(6));
+
+                  TextView brandTitle = new TextView(this);
+                  brandTitle.setText("⚡ HyperLink");
+                  brandTitle.setTextColor(Color.parseColor(COLOR_ACCENT));
+                  brandTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                  brandTitle.setTypeface(Typeface.DEFAULT_BOLD);
+
+                  statusBadge = new TextView(this);
+                  statusBadge.setText("ابتدا وارد سوپرمارکت شوید");
+                  statusBadge.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                  statusBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                  statusBadge.setSingleLine(true);
+                  statusBadge.setEllipsize(TextUtils.TruncateAt.END);
+                  GradientDrawable badgeBg = new GradientDrawable();
+                  badgeBg.setColor(Color.parseColor(COLOR_BG_CARD));
+                  badgeBg.setCornerRadius(dp(10));
+                  statusBadge.setBackground(badgeBg);
+                  statusBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
+                  LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
+                          0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                  badgeParams.setMargins(dp(8), 0, dp(8), 0);
+                  statusBadge.setLayoutParams(badgeParams);
+
+                  Button historyBtn = createHeaderButton("📜 تاریخچه");
+                  historyBtn.setOnClickListener(v -> showHistoryDialog());
+
+                  Button reloadBtn = createHeaderButton("🔄");
+                  LinearLayout.LayoutParams reloadParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  reloadParams.setMargins(dp(4), 0, 0, 0);
+                  reloadBtn.setLayoutParams(reloadParams);
+                  reloadBtn.setOnClickListener(v -> {
+                      if (webView != null) webView.reload();
+                  });
+
+                  Button homeBtn = createHeaderButton("🏠");
+                  LinearLayout.LayoutParams homeParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  homeParams.setMargins(dp(4), 0, 0, 0);
+                  homeBtn.setLayoutParams(homeParams);
+                  homeBtn.setOnClickListener(v -> {
+                      if (webView != null) webView.loadUrl(TAPSI_START_URL);
+                  });
+
+                  topBar.addView(brandTitle);
+                  topBar.addView(statusBadge);
+                  topBar.addView(historyBtn);
+                  topBar.addView(reloadBtn);
+                  topBar.addView(homeBtn);
+                  root.addView(topBar);
+
+                  // ==========================================
+                  // 2. نوار وضعیت مجوز/سهمیه و ابزارهای کاربردی
+                  // ==========================================
+                  LinearLayout quotaBar = new LinearLayout(this);
+                  quotaBar.setOrientation(LinearLayout.HORIZONTAL);
+                  quotaBar.setGravity(Gravity.CENTER_VERTICAL);
+                  quotaBar.setBackgroundColor(Color.parseColor(COLOR_BG_SUB));
+                  quotaBar.setPadding(dp(10), dp(5), dp(10), dp(6));
+
+                  quotaBadge = new TextView(this);
+                  quotaBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                  quotaBadge.setSingleLine(true);
+                  quotaBadge.setEllipsize(TextUtils.TruncateAt.END);
+                  quotaBadge.setLayoutParams(new LinearLayout.LayoutParams(
+                          0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                  quotaBadge.setOnClickListener(v -> showPartnerCodeDialog());
+
+                  partnerBtn = createSmallPillButton("🔑 کد اشتراک", COLOR_BG_CARD, COLOR_ACCENT, COLOR_ACCENT);
+                  partnerBtn.setOnClickListener(v -> showPartnerCodeDialog());
+
+                  autoCopyBtn = createSmallPillButton("📋 کپی خودکار", COLOR_BG_CARD, COLOR_TEXT_MUTED, COLOR_BORDER);
+                  LinearLayout.LayoutParams acParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  acParams.setMargins(dp(5), 0, 0, 0);
+                  autoCopyBtn.setLayoutParams(acParams);
+                  autoCopyBtn.setOnClickListener(v -> {
+                      autoCopyEnabled = !autoCopyEnabled;
+                      prefs.edit().putBoolean(KEY_AUTO_COPY, autoCopyEnabled).apply();
+                      refreshToolButtonsUI();
+                      Toast.makeText(this, autoCopyEnabled ? "✅ کپی خودکار لایسنس فعال شد" : "کپی خودکار غیرفعال شد", Toast.LENGTH_SHORT).show();
+                  });
+
+                  fastModeBtn = createSmallPillButton("🚀 سریع", COLOR_BG_CARD, COLOR_TEXT_MUTED, COLOR_BORDER);
+                  LinearLayout.LayoutParams fmParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  fmParams.setMargins(dp(5), 0, 0, 0);
+                  fastModeBtn.setLayoutParams(fmParams);
+                  fastModeBtn.setOnClickListener(v -> {
+                      fastModeEnabled = !fastModeEnabled;
+                      prefs.edit().putBoolean(KEY_FAST_MODE, fastModeEnabled).apply();
+                      if (webView != null) {
+                          webView.getSettings().setLoadsImagesAutomatically(!fastModeEnabled);
+                          webView.reload();
+                      }
+                      refreshToolButtonsUI();
+                      Toast.makeText(this, fastModeEnabled ? "🚀 حالت سریع (بدون تصویر) فعال شد" : "نمایش تصاویر فعال شد", Toast.LENGTH_SHORT).show();
+                  });
+
+                  quotaBar.addView(quotaBadge);
+                  quotaBar.addView(partnerBtn);
+                  quotaBar.addView(autoCopyBtn);
+                  quotaBar.addView(fastModeBtn);
+                  root.addView(quotaBar);
+
+                  // نوار پیشرفت باریک
+                  progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+                  progressBar.setMax(100);
+                  progressBar.setLayoutParams(new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
+                  root.addView(progressBar);
+
+                  // ==========================================
+                  // 3. بخش میانی: مرورگر تمام‌صفحه + کارت شناور نتیجه
+                  // ==========================================
+                  FrameLayout centerContainer = new FrameLayout(this);
+                  LinearLayout.LayoutParams centerParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+                  centerContainer.setLayoutParams(centerParams);
+
+                  webView = new WebView(this);
+                  webView.setLayoutParams(new FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT));
+                  setupWebView();
+                  centerContainer.addView(webView);
+
+                  // کارت شناور نمایش لایسنس و پیام‌ها (بدون دکمه کپی اطلاعات خام)
+                  resultCard = new LinearLayout(this);
+                  resultCard.setOrientation(LinearLayout.VERTICAL);
+                  resultCard.setVisibility(View.GONE);
+                  GradientDrawable cardBg = new GradientDrawable();
+                  cardBg.setColor(Color.parseColor("#F51E293B"));
+                  cardBg.setCornerRadius(dp(14));
+                  cardBg.setStroke(dp(1), Color.parseColor(COLOR_ACCENT));
+                  resultCard.setBackground(cardBg);
+                  resultCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+                  FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.WRAP_CONTENT,
+                          Gravity.BOTTOM);
+                  cardParams.setMargins(dp(12), dp(12), dp(12), dp(10));
+                  resultCard.setLayoutParams(cardParams);
+
+                  LinearLayout cardHeader = new LinearLayout(this);
+                  cardHeader.setOrientation(LinearLayout.HORIZONTAL);
+                  cardHeader.setGravity(Gravity.CENTER_VERTICAL);
+
+                  resultTitleView = new TextView(this);
+                  resultTitleView.setText("نتیجه استخراج");
+                  resultTitleView.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
+                  resultTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                  resultTitleView.setTypeface(Typeface.DEFAULT_BOLD);
+                  resultTitleView.setLayoutParams(new LinearLayout.LayoutParams(
+                          0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+                  TextView closeCardBtn = new TextView(this);
+                  closeCardBtn.setText("✕");
+                  closeCardBtn.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                  closeCardBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                  closeCardBtn.setPadding(dp(8), dp(2), dp(4), dp(2));
+                  closeCardBtn.setOnClickListener(v -> resultCard.setVisibility(View.GONE));
+
+                  cardHeader.addView(resultTitleView);
+                  cardHeader.addView(closeCardBtn);
+                  resultCard.addView(cardHeader);
+
+                  resultSubView = new TextView(this);
+                  resultSubView.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                  resultSubView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                  resultSubView.setVisibility(View.GONE);
+                  LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  subParams.setMargins(0, dp(4), 0, 0);
+                  resultSubView.setLayoutParams(subParams);
+                  resultCard.addView(resultSubView);
+
+                  licenseValueView = new TextView(this);
+                  licenseValueView.setTextColor(Color.parseColor(COLOR_ACCENT));
+                  licenseValueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                  licenseValueView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                  licenseValueView.setGravity(Gravity.CENTER);
+                  licenseValueView.setTextIsSelectable(true);
+                  GradientDrawable keyBoxBg = new GradientDrawable();
+                  keyBoxBg.setColor(Color.parseColor(COLOR_BG_BAR));
+                  keyBoxBg.setCornerRadius(dp(8));
+                  licenseValueView.setBackground(keyBoxBg);
+                  licenseValueView.setPadding(dp(10), dp(8), dp(10), dp(8));
+                  LinearLayout.LayoutParams keyBoxParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  keyBoxParams.setMargins(0, dp(8), 0, dp(8));
+                  licenseValueView.setLayoutParams(keyBoxParams);
+                  resultCard.addView(licenseValueView);
+
+                  copyLicenseBtn = createActionButton("🔑 کپی کلید لایسنس", COLOR_SUCCESS, "#052E16", null);
+                  copyLicenseBtn.setLayoutParams(new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, dp(40)));
+                  copyLicenseBtn.setOnClickListener(v -> copyLicenseKey());
+                  resultCard.addView(copyLicenseBtn);
+
+                  centerContainer.addView(resultCard);
+                  root.addView(centerContainer);
+
+                  // ==========================================
+                  // 4. نوار عملیات پایین صفحه (Bottom Dock)
+                  // ==========================================
+                  View divider = new View(this);
+                  divider.setBackgroundColor(Color.parseColor("#1E293B"));
+                  divider.setLayoutParams(new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
+                  root.addView(divider);
+
+                  LinearLayout bottomBar = new LinearLayout(this);
+                  bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+                  bottomBar.setGravity(Gravity.CENTER_VERTICAL);
+                  bottomBar.setBackgroundColor(Color.parseColor(COLOR_BG_BAR));
+                  bottomBar.setPadding(dp(10), dp(8), dp(10), dp(10));
+
+                  extractBtn = createActionButton(
+                          "⚡ استخراج و ساخت لایسنس",
+                          COLOR_ACCENT,
+                          "#0F172A",
+                          null
+                  );
+                  LinearLayout.LayoutParams extractParams = new LinearLayout.LayoutParams(
+                          0, dp(44), 1.35f);
+                  extractParams.setMargins(0, 0, dp(5), 0);
+                  extractBtn.setLayoutParams(extractParams);
+                  extractBtn.setOnClickListener(v -> extractAndCreateLicense());
+
+                  cleanBtn = createActionButton(
+                          "🧹 نشست بعدی",
+                          "#271A0C",
+                          COLOR_WARNING,
+                          COLOR_WARNING
+                  );
+                  LinearLayout.LayoutParams cleanParams = new LinearLayout.LayoutParams(
+                          0, dp(44), 0.85f);
+                  cleanParams.setMargins(dp(5), 0, 0, 0);
+                  cleanBtn.setLayoutParams(cleanParams);
+                  cleanBtn.setOnClickListener(v -> performDeepClean());
+
+                  bottomBar.addView(extractBtn);
+                  bottomBar.addView(cleanBtn);
+                  root.addView(bottomBar);
+
+                  setContentView(root);
+                  refreshToolButtonsUI();
+                  refreshPartnerQuotaUI();
+
+                  webView.loadUrl(TAPSI_START_URL);
+              }
+
+              private void refreshToolButtonsUI() {
+                  stylePillButton(
+                          autoCopyBtn,
+                          autoCopyEnabled ? "#064E3B" : COLOR_BG_CARD,
+                          autoCopyEnabled ? COLOR_SUCCESS : COLOR_TEXT_MUTED,
+                          autoCopyEnabled ? COLOR_SUCCESS : COLOR_BORDER
+                  );
+                  stylePillButton(
+                          fastModeBtn,
+                          fastModeEnabled ? "#1E3A5F" : COLOR_BG_CARD,
+                          fastModeEnabled ? COLOR_ACCENT : COLOR_TEXT_MUTED,
+                          fastModeEnabled ? COLOR_ACCENT : COLOR_BORDER
+                  );
+              }
+
+              private void refreshPartnerQuotaUI() {
+                  if (partnerCode == null || partnerCode.trim().isEmpty()) {
+                      quotaBadge.setText("🔒 کد اشتراک ثبت نشده (الزامی برای صدور)");
+                      quotaBadge.setTextColor(Color.parseColor(COLOR_WARNING));
+                      return;
+                  }
+                  quotaBadge.setText("⏳ بررسی سهمیه " + partnerCode + "...");
+                  quotaBadge.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                  fetchPartnerStatus(partnerCode, false);
+              }
+
+              private void showPartnerCodeDialog() {
+                  LinearLayout box = new LinearLayout(this);
+                  box.setOrientation(LinearLayout.VERTICAL);
+                  box.setPadding(dp(18), dp(12), dp(18), dp(6));
+
+                  TextView hint = new TextView(this);
+                  hint.setText("کد اشتراک دریافتی از مدیر (مثلاً SUB-A1B2C3) را وارد کنید. بدون کد معتبر امکان ساخت لایسنس وجود ندارد:");
+                  hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                  box.addView(hint);
+
+                  EditText input = new EditText(this);
+                  input.setHint("SUB-XXXXXX");
+                  input.setText(partnerCode);
+                  input.setSingleLine(true);
+                  input.setInputType(InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+                  input.setGravity(Gravity.CENTER);
+                  LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  ip.setMargins(0, dp(10), 0, 0);
+                  input.setLayoutParams(ip);
+                  box.addView(input);
+
+                  new AlertDialog.Builder(this)
+                          .setTitle("🔑 ثبت کد اشتراک همکار")
+                          .setView(box)
+                          .setPositiveButton("تایید و استعلام", (d, w) -> {
+                              String entered = input.getText().toString().trim().toUpperCase();
+                              if (entered.isEmpty()) {
+                                  partnerCode = "";
+                                  prefs.edit().remove(KEY_PARTNER_CODE).apply();
+                                  refreshPartnerQuotaUI();
+                                  Toast.makeText(this, "کد اشتراک پاک شد", Toast.LENGTH_SHORT).show();
+                              } else {
+                                  partnerCode = entered;
+                                  prefs.edit().putString(KEY_PARTNER_CODE, partnerCode).apply();
+                                  fetchPartnerStatus(partnerCode, true);
+                              }
+                          })
+                          .setNegativeButton("انصراف", null)
+                          .show();
+              }
+
+              private void fetchPartnerStatus(final String code, final boolean showToast) {
+                  new Thread(() -> {
+                      HttpURLConnection conn = null;
+                      try {
+                          URL url = new URL(PARTNER_STATUS_URL + Uri.encode(code));
+                          conn = (HttpURLConnection) url.openConnection();
+                          conn.setRequestMethod("GET");
+                          conn.setConnectTimeout(12000);
+                          conn.setReadTimeout(12000);
+
+                          int httpCode = conn.getResponseCode();
+                          InputStream is = (httpCode >= 200 && httpCode < 400) ? conn.getInputStream() : conn.getErrorStream();
+                          StringBuilder sb = new StringBuilder();
+                          if (is != null) {
+                              try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                                  String line;
+                                  while ((line = br.readLine()) != null) sb.append(line);
+                              }
+                          }
+                          JSONObject res = new JSONObject(sb.toString());
+
+                          mainHandler.post(() -> {
+                              if (httpCode == 200 && res.optBoolean("success", false)) {
+                                  String name = res.optString("name", "همکار");
+                                  boolean active = res.optBoolean("active", true);
+                                  int used = res.optInt("used", 0);
+                                  int limit = res.optInt("limit", 0);
+                                  int rem = res.optInt("remaining", 0);
+
+                                  if (!active) {
+                                      quotaBadge.setText("🚫 " + name + " | مسدود شده");
+                                      quotaBadge.setTextColor(Color.parseColor(COLOR_ERROR));
+                                  } else if (rem <= 0) {
+                                      quotaBadge.setText("⚠️ " + name + " | اتمام سهمیه (" + used + "/" + limit + ")");
+                                      quotaBadge.setTextColor(Color.parseColor(COLOR_ERROR));
+                                  } else {
+                                      quotaBadge.setText("🟢 " + name + " | باقی‌مانده: " + rem + " از " + limit);
+                                      quotaBadge.setTextColor(Color.parseColor(COLOR_SUCCESS));
+                                  }
+                                  if (showToast) {
+                                      Toast.makeText(this, "✅ کد اشتراک تایید شد (" + name + ")", Toast.LENGTH_SHORT).show();
+                                  }
+                              } else {
+                                  String detail = res.optString("detail", "کد نامعتبر");
+                                  quotaBadge.setText("❌ " + detail);
+                                  quotaBadge.setTextColor(Color.parseColor(COLOR_ERROR));
+                                  if (showToast) {
+                                      Toast.makeText(this, "❌ " + detail, Toast.LENGTH_LONG).show();
+                                  }
+                              }
+                          });
+                      } catch (Exception e) {
+                          mainHandler.post(() -> {
+                              quotaBadge.setText("⚠️ خطا در استعلام سهمیه");
+                              quotaBadge.setTextColor(Color.parseColor(COLOR_WARNING));
+                          });
+                      } finally {
+                          if (conn != null) conn.disconnect();
+                      }
+                  }).start();
+              }
+
+              private void seedDefaultDomains() {
+                  observedCabUrls.clear();
+                  observedIrUrls.clear();
+
+                  observedCabUrls.add("https://tapsi.cab");
+                  observedCabUrls.add("https://www.tapsi.cab");
+                  observedCabUrls.add("https://app.tapsi.cab");
+                  observedCabUrls.add("https://api.tapsi.cab");
+                  observedCabUrls.add("https://accounts.tapsi.cab");
+                  observedCabUrls.add("https://sso.tapsi.cab");
+
+                  observedIrUrls.add("https://tapsi.ir");
+                  observedIrUrls.add("https://www.tapsi.ir");
+                  observedIrUrls.add("https://api.tapsi.ir");
+                  observedIrUrls.add("https://sso.tapsi.ir");
+                  observedIrUrls.add("https://accounts.tapsi.ir");
+                  observedIrUrls.add("https://market.tapsi.ir");
+                  observedIrUrls.add("https://supermarket.tapsi.ir");
+                  observedIrUrls.add("https://tapsi.markets");
+                  observedIrUrls.add("https://www.tapsi.markets");
+                  observedIrUrls.add("https://api.tapsi.markets");
+              }
+
+              private void recordObservedUrl(String urlStr) {
+                  if (urlStr == null || urlStr.isEmpty()) return;
+                  try {
+                      Uri uri = Uri.parse(urlStr);
+                      String scheme = uri.getScheme();
+                      String host = uri.getHost();
+                      if (scheme == null || host == null) return;
+                      if (!scheme.equals("http") && !scheme.equals("https")) return;
+
+                      String origin = scheme + "://" + host;
+                      String lowerHost = host.toLowerCase();
+                      if (lowerHost.endsWith("tapsi.cab")) {
+                          observedCabUrls.add(origin);
+                          observedCabUrls.add(urlStr);
+                      } else if (lowerHost.endsWith("tapsi.ir") || lowerHost.endsWith("tapsi.markets")) {
+                          observedIrUrls.add(origin);
+                          observedIrUrls.add(urlStr);
+                      }
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              @SuppressLint("SetJavaScriptEnabled")
+              private void setupWebView() {
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(true);
+                  settings.setGeolocationEnabled(true);
+                  settings.setLoadWithOverviewMode(true);
+                  settings.setUseWideViewPort(true);
+                  settings.setJavaScriptCanOpenWindowsAutomatically(true);
+                  settings.setSupportMultipleWindows(true);
+                  settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                  settings.setLoadsImagesAutomatically(!fastModeEnabled);
+
+                  String defaultUa = settings.getUserAgentString();
+                  if (defaultUa != null) {
+                      settings.setUserAgentString(defaultUa.replace("; wv", ""));
+                  }
+
+                  CookieManager cookieManager = CookieManager.getInstance();
+                  cookieManager.setAcceptCookie(true);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                      cookieManager.setAcceptThirdPartyCookies(webView, true);
+                  }
+
+                  webView.setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public void onProgressChanged(WebView view, int newProgress) {
+                          if (newProgress < 100) {
+                              progressBar.setVisibility(View.VISIBLE);
+                              progressBar.setProgress(newProgress);
+                          } else {
+                              progressBar.setVisibility(View.GONE);
+                          }
+                      }
+
+                      @Override
+                      public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
+                          callback.invoke(origin, true, false);
+                      }
+
+                      @SuppressLint("SetJavaScriptEnabled")
+                      @Override
+                      public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                          WebView tempWebView = new WebView(MainActivity.this);
+                          tempWebView.getSettings().setJavaScriptEnabled(true);
+                          tempWebView.getSettings().setDomStorageEnabled(true);
+                          tempWebView.setWebViewClient(new WebViewClient() {
+                              @Override
+                              public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
+                                  String targetUrl = request.getUrl().toString();
+                                  recordObservedUrl(targetUrl);
+                                  webView.loadUrl(targetUrl);
+                                  v.destroy();
+                                  return true;
+                              }
+
+                              @Override
+                              public void onPageStarted(WebView v, String url, Bitmap favicon) {
+                                  if (url != null && !url.equals("about:blank")) {
+                                      recordObservedUrl(url);
+                                      webView.loadUrl(url);
+                                      v.destroy();
+                                  }
+                              }
+                          });
+                          WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                          transport.setWebView(tempWebView);
+                          resultMsg.sendToTarget();
+                          return true;
+                      }
+                  });
+
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                          if (request != null && request.getUrl() != null) {
+                              recordObservedUrl(request.getUrl().toString());
+                          }
+                          return super.shouldInterceptRequest(view, request);
+                      }
+
+                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                          String url = request.getUrl().toString();
+                          recordObservedUrl(url);
+                          if (url.startsWith("http://") || url.startsWith("https://")) {
+                              return false;
+                          }
+                          return true;
+                      }
+
+                      @Override
+                      public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                          super.onPageStarted(view, url, favicon);
+                          recordObservedUrl(url);
+                      }
+
+                      @Override
+                      public void onPageFinished(WebView view, String url) {
+                          super.onPageFinished(view, url);
+                          recordObservedUrl(url);
+                          CookieManager.getInstance().flush();
+
+                          if (url != null && (url.contains("tapsi.markets") || url.contains("market"))) {
+                              updateStatusBadge("✅ داخل سوپرمارکت (آماده استخراج)", COLOR_SUCCESS);
+                          }
+                      }
+                  });
+              }
+
+              // ==========================================
+              // 1. استخراج و ساخت لایسنس (الزام قطعی به کد اشتراک معتبر)
+              // ==========================================
+              private void extractAndCreateLicense() {
+                  if (partnerCode == null || partnerCode.trim().isEmpty()) {
+                      updateStatusBadge("🔒 کد اشتراک وارد نشده", COLOR_WARNING);
+                      showResultCard(
+                              "🔒 نیاز به کد اشتراک",
+                              "بدون ثبت کد اشتراک معتبر، امکان صدور لایسنس وجود ندارد.",
+                              "ابتدا کد اشتراک خود را ثبت کنید.",
+                              COLOR_WARNING,
+                              false
+                      );
+                      showPartnerCodeDialog();
+                      return;
+                  }
+
+                  updateStatusBadge("⏳ در حال بررسی و استخراج...", COLOR_WARNING);
+                  resultCard.setVisibility(View.GONE);
+                  lastLicenseKey = null;
+
+                  String currentUrl = webView.getUrl() != null ? webView.getUrl() : "";
+                  recordObservedUrl(currentUrl);
+
+                  if (currentUrl.isEmpty() || (!currentUrl.contains("tapsi.cab") && !currentUrl.contains("tapsi.ir") && !currentUrl.contains("tapsi.markets"))) {
+                      updateStatusBadge("❌ خارج از تپسی", COLOR_ERROR);
+                      showResultCard("❌ خطا در استخراج", "", "لطفاً ابتدا وارد سایت تپسی شوید.", COLOR_ERROR, false);
+                      return;
+                  }
+
+                  CookieManager cookieManager = CookieManager.getInstance();
+                  cookieManager.flush();
+
+                  Map<String, String> cookiesCab = collectCookiesForUrlSet(cookieManager, observedCabUrls);
+                  Map<String, String> cookiesIr = collectCookiesForUrlSet(cookieManager, observedIrUrls);
+
+                  if (cookiesIr.isEmpty() && !currentUrl.contains("tapsi.markets")) {
+                      updateStatusBadge("❌ وارد سوپرمارکت نشده‌اید", COLOR_ERROR);
+                      showResultCard(
+                              "❌ اطلاعات مارکت ناقص است!",
+                              "",
+                              "ابتدا در صفحه تپسی روی آیکون «سوپرمارکت» بزنید تا صفحه مارکت باز شود، سپس دکمه ساخت لایسنس را بزنید.",
+                              COLOR_ERROR,
+                              false
+                      );
+                      return;
+                  }
+
+                  List<String> cookiePairs = new ArrayList<>();
+                  for (Map.Entry<String, String> entry : cookiesCab.entrySet()) {
+                      cookiePairs.add(entry.getKey() + "=" + entry.getValue());
+                  }
+                  for (Map.Entry<String, String> entry : cookiesIr.entrySet()) {
+                      cookiePairs.add(entry.getKey() + "=" + entry.getValue());
+                  }
+                  final String cookieString = TextUtils.join("; ", cookiePairs);
+
+                  webView.evaluateJavascript(
+                          "(function() { return JSON.stringify(window.localStorage); })();",
+                          value -> {
+                              try {
+                                  String localStorageData = unwrapJsString(value);
+                                  if (localStorageData == null || localStorageData.trim().isEmpty()) {
+                                      localStorageData = "{}";
+                                  }
+
+                                  String detectedPhone = detectPhoneFromText(localStorageData + " " + cookieString);
+
+                                  JSONObject payload = new JSONObject();
+                                  payload.put("cookies", cookieString.isEmpty() ? "empty" : cookieString);
+                                  payload.put("local_storage", localStorageData);
+                                  payload.put("phone_number", detectedPhone);
+                                  payload.put("partner_code", partnerCode.trim().toUpperCase());
+
+                                  updateStatusBadge("⏳ در حال صدور لایسنس...", COLOR_WARNING);
+                                  extractBtn.setEnabled(false);
+                                  extractBtn.setText("⏳ در حال دریافت...");
+
+                                  sendLicenseRequest(payload.toString());
+
+                              } catch (Exception err) {
+                                  extractBtn.setEnabled(true);
+                                  extractBtn.setText("⚡ استخراج و ساخت لایسنس");
+                                  updateStatusBadge("❌ خطای سیستمی", COLOR_ERROR);
+                                  showResultCard("❌ خطای سیستمی", "", err.getMessage(), COLOR_ERROR, false);
+                              }
+                          }
+                  );
+              }
+
+              private void sendLicenseRequest(final String jsonBody) {
+                  new Thread(() -> {
+                      HttpURLConnection conn = null;
+                      try {
+                          URL url = new URL(API_URL);
+                          conn = (HttpURLConnection) url.openConnection();
+                          conn.setRequestMethod("POST");
+                          conn.setConnectTimeout(20000);
+                          conn.setReadTimeout(20000);
+                          conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                          conn.setRequestProperty("Accept", "application/json");
+                          conn.setDoOutput(true);
+
+                          byte[] input = jsonBody.getBytes(StandardCharsets.UTF_8);
+                          try (OutputStream os = conn.getOutputStream()) {
+                              os.write(input, 0, input.length);
+                          }
+
+                          int code = conn.getResponseCode();
+                          InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();
+                          StringBuilder responseText = new StringBuilder();
+                          if (is != null) {
+                              try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                                  String line;
+                                  while ((line = br.readLine()) != null) {
+                                      responseText.append(line);
+                                  }
+                              }
+                          }
+
+                          JSONObject data = new JSONObject(responseText.toString());
+                          final boolean isOk = (code >= 200 && code < 300) && data.optBoolean("success", false);
+
+                          mainHandler.post(() -> {
+                              extractBtn.setEnabled(true);
+                              extractBtn.setText("⚡ استخراج و ساخت لایسنس");
+
+                              if (isOk) {
+                                  lastLicenseKey = data.optString("license_key", "");
+                                  String phone = data.optString("phone_number", "نامشخص");
+                                  String pName = data.optString("partner_name", "همکار");
+                                  int used = data.optInt("quota_used", 0);
+                                  int limit = data.optInt("quota_limit", 0);
+                                  int rem = data.optInt("quota_remaining", 0);
+
+                                  quotaBadge.setText("🟢 " + pName + " | باقی‌مانده: " + rem + " از " + limit);
+                                  quotaBadge.setTextColor(Color.parseColor(rem > 0 ? COLOR_SUCCESS : COLOR_ERROR));
+
+                                  saveToHistory(lastLicenseKey, phone);
+                                  updateStatusBadge("✅ لایسنس صادر شد", COLOR_SUCCESS);
+                                  showResultCard(
+                                          "✅ لایسنس تپسی با موفقیت صادر شد",
+                                          "📱 شماره: " + phone + "  |  📊 سهمیه: " + used + "/" + limit,
+                                          lastLicenseKey,
+                                          COLOR_ACCENT,
+                                          true
+                                  );
+
+                                  if (autoCopyEnabled) {
+                                      copyLicenseKey();
+                                  }
+                              } else {
+                                  String detail = data.optString("detail", "خطای نامشخص از سرور");
+                                  updateStatusBadge("❌ خطای مجوز/سرور", COLOR_ERROR);
+                                  showResultCard("❌ عدم امکان صدور لایسنس", "", detail, COLOR_ERROR, false);
+                                  if (code == 403) {
+                                      fetchPartnerStatus(partnerCode, false);
+                                  }
+                              }
+                          });
+
+                      } catch (Exception err) {
+                          mainHandler.post(() -> {
+                              extractBtn.setEnabled(true);
+                              extractBtn.setText("⚡ استخراج و ساخت لایسنس");
+                              updateStatusBadge("❌ خطای ارتباط", COLOR_ERROR);
+                              showResultCard("❌ خطای ارتباط با سرور", "", err.getMessage(), COLOR_ERROR, false);
+                          });
+                      } finally {
+                          if (conn != null) {
+                              conn.disconnect();
+                          }
+                      }
+                  }).start();
+              }
+
+              // ==========================================
+              // 2. تاریخچه محلی لایسنس‌ها و کپی کلید
+              // ==========================================
+              private void saveToHistory(String licenseKey, String phone) {
+                  try {
+                      JSONArray arr = new JSONArray(prefs.getString(KEY_HISTORY, "[]"));
+                      JSONObject item = new JSONObject();
+                      item.put("key", licenseKey);
+                      item.put("phone", phone);
+                      item.put("time", new SimpleDateFormat("MM/dd HH:mm", Locale.US).format(new Date()));
+
+                      JSONArray updated = new JSONArray();
+                      updated.put(item);
+                      for (int i = 0; i < arr.length() && i < 29; i++) {
+                          updated.put(arr.get(i));
+                      }
+                      prefs.edit().putString(KEY_HISTORY, updated.toString()).apply();
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              private void showHistoryDialog() {
+                  try {
+                      JSONArray arr = new JSONArray(prefs.getString(KEY_HISTORY, "[]"));
+                      if (arr.length() == 0) {
+                          Toast.makeText(this, "تاریخچه خالی است", Toast.LENGTH_SHORT).show();
+                          return;
+                      }
+
+                      ScrollView sv = new ScrollView(this);
+                      LinearLayout list = new LinearLayout(this);
+                      list.setOrientation(LinearLayout.VERTICAL);
+                      list.setPadding(dp(14), dp(8), dp(14), dp(8));
+
+                      for (int i = 0; i < arr.length(); i++) {
+                          JSONObject obj = arr.getJSONObject(i);
+                          final String key = obj.optString("key", "");
+                          String phone = obj.optString("phone", "نامشخص");
+                          String timeStr = obj.optString("time", "");
+
+                          TextView tv = new TextView(this);
+                          tv.setText((i + 1) + ". " + key + "\n📱 " + phone + "  |  🕒 " + timeStr);
+                          tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                          tv.setPadding(dp(10), dp(8), dp(10), dp(8));
+                          tv.setOnClickListener(v -> {
+                              ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                              cb.setPrimaryClip(ClipData.newPlainText("Tapsi License", key));
+                              Toast.makeText(this, "✅ کپی شد: " + key, Toast.LENGTH_SHORT).show();
+                          });
+                          list.addView(tv);
+                      }
+                      sv.addView(list);
+
+                      new AlertDialog.Builder(this)
+                              .setTitle("📜 تاریخچه لایسنس‌های صادرشده (برای کپی لمس کنید)")
+                              .setView(sv)
+                              .setPositiveButton("بستن", null)
+                              .setNeutralButton("پاک کردن تاریخچه", (d, w) -> {
+                                  prefs.edit().remove(KEY_HISTORY).apply();
+                                  Toast.makeText(this, "تاریخچه پاک شد", Toast.LENGTH_SHORT).show();
+                              })
+                              .show();
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              private void copyLicenseKey() {
+                  if (lastLicenseKey != null && !lastLicenseKey.isEmpty()) {
+                      ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                      ClipData clip = ClipData.newPlainText("HyperLink License Key", lastLicenseKey);
+                      clipboard.setPrimaryClip(clip);
+                      Toast.makeText(this, "✅ کلید لایسنس کپی شد!", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              // ==========================================
+              // 3. پاک‌سازی عمیق برای نشست بعدی
+              // ==========================================
+              private void performDeepClean() {
+                  updateStatusBadge("🧹 در حال پاک‌سازی...", COLOR_WARNING);
+                  resultCard.setVisibility(View.GONE);
+
+                  try {
+                      seedDefaultDomains();
+                      lastLicenseKey = null;
+
+                      webView.evaluateJavascript(
+                              "(function() { try { window.localStorage.clear(); window.sessionStorage.clear(); } catch(e) {} })();",
+                              null
+                      );
+
+                      WebStorage.getInstance().deleteAllData();
+
+                      CookieManager cookieManager = CookieManager.getInstance();
+                      cookieManager.removeAllCookies(value -> {
+                          cookieManager.flush();
+                          webView.clearCache(true);
+                          webView.clearFormData();
+                          webView.clearHistory();
+                          webView.loadUrl(TAPSI_START_URL);
+
+                          updateStatusBadge("ابتدا وارد سوپرمارکت شوید", COLOR_TEXT_MUTED);
+                          Toast.makeText(this, "✅ مرورگر پاک‌سازی شد؛ آماده ورود با شماره جدید", Toast.LENGTH_SHORT).show();
+                      });
+
+                  } catch (Exception err) {
+                      updateStatusBadge("❌ خطا در پاک‌سازی", COLOR_ERROR);
+                  }
+              }
+
+              // ==========================================
+              // توابع کمکی
+              // ==========================================
+              private String detectPhoneFromText(String raw) {
+                  if (raw == null || raw.isEmpty()) return "unknown";
+                  try {
+                      Matcher m = Pattern.compile("(?:\\+98|0098|98|0)?(9\\d{9})\\b").matcher(raw);
+                      if (m.find()) {
+                          return "0" + m.group(1);
+                      }
+                  } catch (Exception ignored) {
+                  }
+                  return "unknown";
+              }
+
+              private void updateStatusBadge(String text, String colorHex) {
+                  statusBadge.setText(text);
+                  statusBadge.setTextColor(Color.parseColor(colorHex));
+              }
+
+              private void showResultCard(String title, String subtitle, String content, String contentColorHex, boolean showLicenseCopy) {
+                  resultTitleView.setText(title);
+                  if (subtitle != null && !subtitle.isEmpty()) {
+                      resultSubView.setText(subtitle);
+                      resultSubView.setVisibility(View.VISIBLE);
+                  } else {
+                      resultSubView.setVisibility(View.GONE);
+                  }
+                  licenseValueView.setText(content != null ? content : "");
+                  licenseValueView.setTextColor(Color.parseColor(contentColorHex));
+                  copyLicenseBtn.setVisibility(showLicenseCopy ? View.VISIBLE : View.GONE);
+                  resultCard.setVisibility(View.VISIBLE);
+              }
+
+              private Map<String, String> collectCookiesForUrlSet(CookieManager cm, Set<String> urls) {
+                  Map<String, String> map = new LinkedHashMap<>();
+                  List<String> snapshot;
+                  synchronized (urls) {
+                      snapshot = new ArrayList<>(urls);
+                  }
+                  for (String u : snapshot) {
+                      if (u == null || u.isEmpty()) continue;
+                      String raw = cm.getCookie(u);
+                      if (raw != null && !raw.trim().isEmpty()) {
+                          String[] pairs = raw.split(";");
+                          for (String pair : pairs) {
+                              String trimmed = pair.trim();
+                              int idx = trimmed.indexOf('=');
+                              if (idx > 0) {
+                                  String k = trimmed.substring(0, idx).trim();
+                                  String v = trimmed.substring(idx + 1).trim();
+                                  map.put(k, v);
+                              }
+                          }
+                      }
+                  }
+                  return map;
+              }
+
+              private String unwrapJsString(String value) {
+                  if (value == null || "null".equals(value)) {
+                      return "{}";
+                  }
+                  try {
+                      Object tok = new JSONTokener(value).nextValue();
+                      return tok != null ? tok.toString() : "{}";
+                  } catch (Exception e) {
+                      return "{}";
+                  }
+              }
+
+              private Button createActionButton(String text, String bgHex, String textHex, String strokeHex) {
+                  Button btn = new Button(this);
+                  btn.setText(text);
+                  btn.setAllCaps(false);
+                  btn.setTextColor(Color.parseColor(textHex));
+                  btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                  btn.setTypeface(Typeface.DEFAULT_BOLD);
+                  btn.setSingleLine(true);
+
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(Color.parseColor(bgHex));
+                  bg.setCornerRadius(dp(10));
+                  if (strokeHex != null) {
+                      bg.setStroke(dp(1), Color.parseColor(strokeHex));
+                  }
+                  btn.setBackground(bg);
+                  btn.setPadding(dp(8), 0, dp(8), 0);
+                  return btn;
+              }
+
+              private Button createSmallPillButton(String text, String bgHex, String textHex, String strokeHex) {
+                  Button btn = new Button(this);
+                  btn.setText(text);
+                  btn.setAllCaps(false);
+                  btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+                  btn.setPadding(dp(8), dp(3), dp(8), dp(3));
+                  btn.setMinHeight(0);
+                  btn.setMinimumHeight(0);
+                  btn.setMinWidth(0);
+                  btn.setMinimumWidth(0);
+                  stylePillButton(btn, bgHex, textHex, strokeHex);
+                  return btn;
+              }
+
+              private void stylePillButton(Button btn, String bgHex, String textHex, String strokeHex) {
+                  btn.setTextColor(Color.parseColor(textHex));
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(Color.parseColor(bgHex));
+                  bg.setCornerRadius(dp(8));
+                  if (strokeHex != null) {
+                      bg.setStroke(dp(1), Color.parseColor(strokeHex));
+                  }
+                  btn.setBackground(bg);
+              }
+
+              private Button createHeaderButton(String text) {
+                  Button btn = new Button(this);
+                  btn.setText(text);
+                  btn.setAllCaps(false);
+                  btn.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
+                  btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(Color.parseColor(COLOR_BG_CARD));
+                  bg.setCornerRadius(dp(8));
+                  bg.setStroke(dp(1), Color.parseColor(COLOR_BORDER));
+                  btn.setBackground(bg);
+                  btn.setPadding(dp(8), dp(4), dp(8), dp(4));
+                  btn.setMinHeight(0);
+                  btn.setMinimumHeight(0);
+                  btn.setMinWidth(0);
+                  btn.setMinimumWidth(0);
+                  return btn;
+              }
+
+              private int dp(int value) {
+                  return (int) TypedValue.applyDimension(
+                          TypedValue.COMPLEX_UNIT_DIP,
+                          value,
+                          getResources().getDisplayMetrics()
+                  );
+              }
+
+              private void requestLocationPermissionsIfNeeded() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                          requestPermissions(new String[]{
+                                  Manifest.permission.ACCESS_FINE_LOCATION,
+                                  Manifest.permission.ACCESS_COARSE_LOCATION
+                          }, 1001);
+                      }
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (resultCard != null && resultCard.getVisibility() == View.VISIBLE) {
+                      resultCard.setVisibility(View.GONE);
+                  } else if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+      - name: Build Debug APK with Gradle
+        run: |
+          gradle assembleDebug --no-daemon
+
+      - name: Prepare Output APK
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk HyperLink-Tapsi-Pro-v2.0.apk
+
+      - name: Upload APK to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: HyperLink-Tapsi-Pro-APK
+          path: HyperLink-Tapsi-Pro-v2.0.apk
+
+      - name: Create GitHub Release (Optional Direct Download)
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        with:
+          tag_name: v2.0.${{ github.run_number }}
+          name: "HyperLink Tapsi Pro APK (Build #${{ github.run_number }})"
+          files: HyperLink-Tapsi-Pro-v2.0.apk
