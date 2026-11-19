@@ -1,4 +1,4 @@
-name: Build HyperLink Tapsi Extractor APK (v2.0 Quota)
+name: Build Tapsi Studio Standalone APK (v2.1)
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       - name: Generate Android Studio Project Files
         shell: bash
         run: |
-          mkdir -p app/src/main/java/ir/hyperlink/extractor
+          mkdir -p app/src/main/java/ir/hyperlink/tapsi/studio
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/values
 
@@ -58,7 +58,7 @@ jobs:
                   mavenCentral()
               }
           }
-          rootProject.name = "HyperLinkExtractor"
+          rootProject.name = "TapsiStudio"
           include ':app'
           EOF
 
@@ -79,15 +79,15 @@ jobs:
           }
 
           android {
-              namespace 'ir.hyperlink.extractor'
+              namespace 'ir.hyperlink.tapsi.studio'
               compileSdk 34
 
               defaultConfig {
-                  applicationId "ir.hyperlink.extractor"
+                  applicationId "ir.hyperlink.tapsi.studio"
                   minSdk 23
                   targetSdk 34
-                  versionCode 20
-                  versionName "2.0"
+                  versionCode 21
+                  versionName "2.1"
               }
 
               buildTypes {
@@ -117,17 +117,29 @@ jobs:
               android:viewportWidth="108"
               android:viewportHeight="108">
               <path
-                  android:fillColor="#0F172A"
+                  android:fillColor="#0B1120"
                   android:pathData="M0,0h108v108h-108z"/>
               <path
+                  android:fillColor="#162544"
+                  android:pathData="M54,14L88,34L88,74L54,94L20,74L20,34Z"/>
+              <path
+                  android:fillColor="#10B981"
+                  android:pathData="M54,24L79,38.5L79,69.5L54,84L29,69.5L29,38.5Z"/>
+              <path
+                  android:fillColor="#0B1120"
+                  android:pathData="M54,33L71,43L71,65L54,75L37,65L37,43Z"/>
+              <path
                   android:fillColor="#38BDF8"
-                  android:pathData="M60,22L32,60h20l-6,26l30,-38H56z"/>
+                  android:pathData="M45,45h18v6h-12v12h12v6h-18z"/>
+              <path
+                  android:fillColor="#F8FAFC"
+                  android:pathData="M56,51h8v6h-8z"/>
           </vector>
           EOF
 
           cat << 'EOF' > app/src/main/res/values/strings.xml
           <resources>
-              <string name="app_name">HyperLink Pro</string>
+              <string name="app_name">Tapsi Studio</string>
           </resources>
           EOF
 
@@ -163,8 +175,8 @@ jobs:
           </manifest>
           EOF
 
-          cat << 'EOF' > app/src/main/java/ir/hyperlink/extractor/MainActivity.java
-          package ir.hyperlink.extractor;
+          cat << 'EOF' > app/src/main/java/ir/hyperlink/tapsi/studio/MainActivity.java
+          package ir.hyperlink.tapsi.studio;
 
           import android.Manifest;
           import android.annotation.SuppressLint;
@@ -241,7 +253,7 @@ jobs:
               private static final String API_URL = API_BASE + "/api/tapsi/create-license";
               private static final String PARTNER_STATUS_URL = API_BASE + "/api/tapsi/partner-status/";
 
-              private static final String PREFS_NAME = "hyperlink_tapsi_prefs";
+              private static final String PREFS_NAME = "tapsi_studio_prefs";
               private static final String KEY_PARTNER_CODE = "partner_code";
               private static final String KEY_AUTO_COPY = "auto_copy";
               private static final String KEY_FAST_MODE = "fast_mode";
@@ -322,7 +334,7 @@ jobs:
                   topBar.setPadding(dp(10), dp(8), dp(10), dp(6));
 
                   TextView brandTitle = new TextView(this);
-                  brandTitle.setText("⚡ HyperLink");
+                  brandTitle.setText("⚡ Tapsi Studio");
                   brandTitle.setTextColor(Color.parseColor(COLOR_ACCENT));
                   brandTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
                   brandTitle.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1320,19 +1332,19 @@ jobs:
 
       - name: Prepare Output APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk HyperLink-Tapsi-Pro-v2.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk Tapsi-Studio-v2.1.apk
 
       - name: Upload APK to Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: HyperLink-Tapsi-Pro-APK
-          path: HyperLink-Tapsi-Pro-v2.0.apk
+          name: Tapsi-Studio-APK
+          path: Tapsi-Studio-v2.1.apk
 
       - name: Create GitHub Release (Optional Direct Download)
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         with:
-          tag_name: v2.0.${{ github.run_number }}
-          name: "HyperLink Tapsi Pro APK (Build #${{ github.run_number }})"
-          files: HyperLink-Tapsi-Pro-v2.0.apk
+          tag_name: v2.1.${{ github.run_number }}
+          name: "Tapsi Studio Standalone APK v2.1 (Build #${{ github.run_number }})"
+          files: Tapsi-Studio-v2.1.apk
